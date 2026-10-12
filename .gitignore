@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.env.local
+collector/config.json
+public/local-data.json
+__pycache__
