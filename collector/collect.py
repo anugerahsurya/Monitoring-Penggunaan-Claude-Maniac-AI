@@ -237,8 +237,17 @@ def aggregate(calls, sessions, prompts):
     return hourly_rows, tool_rows, session_rows, window_rows
 
 
+def normalize_url(u):
+    """Terima juga 'db.<ref>.supabase.co' (host Postgres) atau URL tanpa https://."""
+    host = u.strip().split("://")[-1].strip("/")
+    if host.startswith("db.") and host.endswith(".supabase.co"):
+        host = host[3:]
+    return "https://" + host
+
+
 def upload(cfg, payload):
-    url = cfg["supabase_url"].rstrip("/") + "/rest/v1/rpc/ingest_usage"
+    cfg["supabase_url"] = normalize_url(cfg["supabase_url"])
+    url = cfg["supabase_url"] + "/rest/v1/rpc/ingest_usage"
     body = json.dumps({"p_token": cfg["ingest_token"], "p_hourly": payload["hourly"], "p_tools": payload["tools"],
                        "p_sessions": payload["sessions"], "p_windows": payload["windows"]}).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST", headers={
@@ -250,6 +259,10 @@ def upload(cfg, payload):
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         sys.exit(f"Gagal mengunggah ({e.code}): {e.read().decode('utf-8', 'replace')}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Tidak bisa menghubungi {cfg['supabase_url']} ({e.reason}).\n"
+                 "Periksa supabase_url di config.json (salin persis dari Supabase > Project Settings > API) "
+                 "dan koneksi internet.")
 
 
 def main():
@@ -284,6 +297,11 @@ def main():
         sys.exit(f"config.json belum ada. Salin config.example.json menjadi config.json lalu isi. ({args.config})")
     with open(args.config, encoding="utf-8") as fh:
         cfg = json.load(fh)
+    token = cfg.get("ingest_token", "")
+    if not token or token.startswith(("ISI_", "eyJ")) or token == cfg.get("supabase_anon_key"):
+        sys.exit("ingest_token di config.json belum benar. Isi dengan token unggah milik Anda (48 karakter hex),\n"
+                 "bukan anon key. Ambil di Supabase SQL Editor:\n"
+                 "  select member, token from ingest_tokens order by member;")
     res = upload(cfg, payload)
     print(f"Terunggah sebagai {res.get('member')}: {res}")
 

@@ -11,7 +11,8 @@ import LimitsSection from './components/LimitsSection'
 import Heatmap from './components/Heatmap'
 import DataTable from './components/DataTable'
 import Glossary from './components/Glossary'
-import { DutyModal, SettingsModal } from './components/Modals'
+import { DutyModal } from './components/Modals'
+import CalibrateModal from './components/Calibrate'
 
 const PERIODS = [
   { value: 1, label: 'Hari ini' }, { value: 7, label: '7 hari' }, { value: 30, label: '30 hari' },
@@ -92,11 +93,11 @@ export default function App() {
       input: sum(calls, r => r.input), output: sum(calls, r => r.output), thinking: sum(calls, r => r.thinking),
       cr: sum(calls, r => r.cache_read), cw: sum(calls, r => r.cache_write_5m + r.cache_write_1h),
       cost: sum(calls, r => r.cost), calls: sum(calls, r => r.calls), web: sum(calls, r => r.web_search),
-      prompts: sum(promptRows, r => r.prompts), counted: sum(calls, r => countedTokens(r, settings)),
+      prompts: sum(promptRows, r => r.prompts), counted: sum(calls, r => countedTokens(r)),
     }
     const activeDays = new Set(calls.map(r => r.day)).size
     return { calls, promptRows, tools, sessions, days, idx, perDay, tot, activeDays }
-  }, [data, from, to, f, settings])
+  }, [data, from, to, f])
 
   if (error) return <div className="wrap"><div className="card empty">Gagal memuat data: {error}</div></div>
   if (!data || !view) return <div className="wrap"><div className="loading"><span className="spinner" /> Memuat data…</div></div>
@@ -107,7 +108,8 @@ export default function App() {
   const projects = opt(uniq(data.hourly.map(r => r.project)))
   const models = opt(uniq(data.hourly.map(r => r.model).filter(Boolean)))
   const entries = opt(uniq(data.hourly.map(r => r.entry)))
-  const scopeMembers = f.member ? [f.member] : allMembers
+  // batas berlaku untuk akun bersama: selalu semua anggota, tidak ikut filter
+  const teamMembers = [...TEAM, ...allMembers.filter(m => !TEAM.includes(m))]
 
   // --- token harian per jenis
   const TOK = [['input', 'Input', r => r.input], ['cw', 'Cache write', r => r.cache_write_5m + r.cache_write_1h], ['cr', 'Cache read', r => r.cache_read], ['output', 'Output', r => r.output]]
@@ -123,8 +125,8 @@ export default function App() {
 
   // --- per anggota / proyek / tool
   const group = (rows, key, val) => { const g = {}; rows.forEach(r => { g[r[key]] = (g[r[key]] || 0) + val(r) }); return Object.entries(g).sort((a, b) => b[1] - a[1]) }
-  const byMember = group(calls, 'member', r => countedTokens(r, settings))
-  const byProject = group(calls, 'project', r => countedTokens(r, settings))
+  const byMember = group(calls, 'member', r => countedTokens(r))
+  const byProject = group(calls, 'project', r => countedTokens(r))
   const byTool = group(tools, 'tool', r => r.count).slice(0, 12)
 
   // --- biaya per model (urutan stabil berdasarkan seluruh data)
@@ -141,14 +143,14 @@ export default function App() {
 
   // --- tabel harian & sesi
   const daily = days.map((d, i) => ({ id: d, day: d, tokens: 0, counted: 0, prompts: 0, calls: 0, input: 0, output: 0, cr: 0, cw: 0, cost: 0, members: new Set() }))
-  calls.forEach(r => { const x = daily[view.idx[r.day]]; x.calls += r.calls; x.input += r.input; x.output += r.output; x.cr += r.cache_read; x.cw += r.cache_write_5m + r.cache_write_1h; x.cost += r.cost; x.counted += countedTokens(r, settings); x.members.add(r.member) })
+  calls.forEach(r => { const x = daily[view.idx[r.day]]; x.calls += r.calls; x.input += r.input; x.output += r.output; x.cr += r.cache_read; x.cw += r.cache_write_5m + r.cache_write_1h; x.cost += r.cost; x.counted += countedTokens(r); x.members.add(r.member) })
   promptRows.forEach(r => { daily[view.idx[r.day]].prompts += r.prompts })
   const dailyRows = daily.filter(r => r.calls || r.prompts).map(r => ({ ...r, members: [...r.members].join(', ') }))
   const maxDaily = Math.max(1, ...dailyRows.map(r => r.counted))
   const sessRows = sessions.map(s => ({ ...s, id: s.member + s.session_id, start: s.t, span: s.end - s.t, lines: s.lines_added + s.lines_removed }))
 
   const kpis = [
-    ['Token terhitung', tot.counted, tok, `input + cache write + output${settings.countCacheRead ? ' + cache read' : ''}`],
+    ['Token terhitung', tot.counted, tok, 'input + cache write + output'],
     ['Total token', tot.input + tot.output + tot.cr + tot.cw, tok, `termasuk cache read ${tok(tot.cr)}`],
     ['Prompt diketik', tot.prompts, v => nf.format(Math.round(v)), `${(tot.prompts / Math.max(1, activeDays)).toLocaleString('id-ID', { maximumFractionDigits: 1 })} per hari aktif`],
     ['Panggilan API', tot.calls, v => nf.format(Math.round(v)), `${(tot.calls / Math.max(1, tot.prompts)).toLocaleString('id-ID', { maximumFractionDigits: 1 })} per prompt`],
@@ -203,8 +205,9 @@ export default function App() {
 
         <div className="grid">
           <LimitsSection
-            members={scopeMembers} memberColor={memberColor} hourly={data.hourly} windows={data.windows}
-            settings={settings} from={from} to={to} onOpenSettings={() => setSetOpen(true)} i0={0}
+            members={teamMembers} memberColor={memberColor} hourly={data.hourly} settings={settings}
+            account={data.account} lastSeen={data.lastSeen} dutyToday={duty.today.who}
+            from={from} to={to} onOpenSettings={() => setSetOpen(true)} i0={0}
           />
 
           <div className="kpis span-12">
@@ -300,7 +303,7 @@ export default function App() {
       </div>
 
       <DutyModal open={dutyOpen} onClose={() => setDutyOpen(false)} duty={duty} memberColor={memberColor} />
-      {setOpen && <SettingsModal open={setOpen} onClose={() => setSetOpen(false)} settings={settings} setSettings={setSettings} />}
+      {setOpen && <CalibrateModal open={setOpen} onClose={() => setSetOpen(false)} members={teamMembers} data={data} settings={settings} setSettings={setSettings} onSaved={() => loadData().then(setData)} />}
     </MotionConfig>
   )
 }

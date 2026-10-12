@@ -1,9 +1,5 @@
-import { useState } from 'react'
 import { motion } from 'motion/react'
 import { Modal } from './ui'
-import { DAY_NAMES } from '../lib/piket'
-import { DEFAULTS } from '../lib/settings'
-import { nf } from '../lib/format'
 import { EASE_OUT } from '../lib/theme'
 
 const fmtShort = d => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
@@ -43,50 +39,6 @@ export function DutyModal({ open, onClose, duty, memberColor }) {
         ))}
       </ul>
       <div className="actions"><button className="btn-primary" onClick={onClose} autoFocus>Siap, mengerti</button></div>
-    </Modal>
-  )
-}
-
-export function SettingsModal({ open, onClose, settings, setSettings }) {
-  const [draft, setDraft] = useState(settings)
-  const set = (k, v) => setDraft(d => ({ ...d, [k]: v }))
-  const save = () => { setSettings(draft); onClose() }
-  return (
-    <Modal open={open} onClose={onClose} labelledBy="setTitle" width={480}>
-      <div className="eyebrow">Pengaturan</div>
-      <h3 id="setTitle">Batas penggunaan</h3>
-      <p className="sub">
-        Anthropic tidak mempublikasikan batas paket dalam angka token. Cocokkan angka di sini dengan persentase di
-        Claude → Settings → Usage, lalu sesuaikan. Pengaturan disimpan di browser ini.
-      </p>
-      <div className="form">
-        <label>Batas jendela 5 jam (token)
-          <input type="number" min="1" step="100000" value={draft.limit5h} onChange={e => set('limit5h', +e.target.value || 1)} />
-          <span className="hint">{nf.format(draft.limit5h)} token</span>
-        </label>
-        <label>Batas mingguan (token)
-          <input type="number" min="1" step="1000000" value={draft.limitWeek} onChange={e => set('limitWeek', +e.target.value || 1)} />
-          <span className="hint">{nf.format(draft.limitWeek)} token</span>
-        </label>
-        <label>Reset mingguan setiap
-          <div className="row">
-            <select value={draft.resetDay} onChange={e => set('resetDay', +e.target.value)}>
-              {DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
-            </select>
-            <select value={draft.resetHour} onChange={e => set('resetHour', +e.target.value)}>
-              {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}.00</option>)}
-            </select>
-          </div>
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={draft.countCacheRead} onChange={e => set('countCacheRead', e.target.checked)} />
-          Hitung cache read sebagai pemakaian
-        </label>
-      </div>
-      <div className="actions">
-        <button className="btn-ghost" onClick={() => setDraft(DEFAULTS)}>Kembalikan default</button>
-        <button className="btn-primary" onClick={save}>Simpan</button>
-      </div>
     </Modal>
   )
 }
